@@ -34,10 +34,13 @@
 #include "runtime/message_body_sink.h"
 #include "util/byte_buffer.h"
 #include "util/slice.h"
+#include "util/time.h"
+#include "util/uid_util.h"
 
 namespace doris {
 namespace io {
 class IOContext;
+class StreamLoadPipe;
 
 static inline constexpr size_t kMaxPipeBufferedBytes = 4 * 1024 * 1024;
 
@@ -45,7 +48,7 @@ class StreamLoadPipe : public MessageBodySink, public FileReader {
 public:
     StreamLoadPipe(size_t max_buffered_bytes = kMaxPipeBufferedBytes,
                    size_t min_chunk_size = 64 * 1024, int64_t total_length = -1,
-                   bool use_proto = false);
+                   bool use_proto = false, UniqueId id = UniqueId(0, 0));
     ~StreamLoadPipe() override;
 
     Status append_and_flush(const char* data, size_t size, size_t proto_byte_size = 0);
@@ -67,14 +70,20 @@ public:
     bool closed() const override { return _cancelled; }
 
     // called when producer finished
-    Status finish() override;
+    virtual Status finish() override;
 
     // called when producer/consumer failed
-    void cancel(const std::string& reason) override;
+    virtual void cancel(const std::string& reason) override;
 
     Status read_one_message(std::unique_ptr<uint8_t[]>* data, size_t* length);
 
     FileSystemSPtr fs() const override { return nullptr; }
+
+    size_t get_queue_size() { return _buf_queue.size(); }
+
+    bool is_cancelled() { return _cancelled; }
+    bool is_finished() { return _finished; }
+    uint64_t last_active() { return _last_active; }
 
 protected:
     Status read_at_impl(size_t offset, Slice result, size_t* bytes_read,
@@ -107,6 +116,8 @@ private:
     std::condition_variable _get_cond;
 
     ByteBufferPtr _write_buf;
+    UniqueId _id;
+    uint64_t _last_active = 0;
 
     // no use, only for compatibility with the `Path` interface
     Path _path = "";

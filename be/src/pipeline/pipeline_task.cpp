@@ -280,6 +280,8 @@ QueryContext* PipelineTask::query_context() {
 
 // The FSM see PipelineTaskState's comment
 void PipelineTask::set_state(PipelineTaskState state) {
+    DCHECK(_cur_state != PipelineTaskState::FINISHED);
+
     if (_cur_state == state) {
         return;
     }
@@ -301,6 +303,11 @@ void PipelineTask::set_state(PipelineTaskState state) {
             COUNTER_UPDATE(_block_by_sink_counts, 1);
         }
     }
+
+    if (state == PipelineTaskState::FINISHED) {
+        _finish_p_dependency();
+    }
+
     _cur_state = state;
 }
 
@@ -309,6 +316,10 @@ std::string PipelineTask::debug_string() {
     std::stringstream profile_ss;
     _fresh_profile_counter();
     _task_profile->pretty_print(&profile_ss, "");
+
+    fmt::format_to(debug_string_buffer, "QueryId: {}\n", print_id(query_context()->query_id));
+    fmt::format_to(debug_string_buffer, "InstanceId: {}\n",
+                   print_id(fragment_context()->get_fragment_instance_id()));
 
     fmt::format_to(debug_string_buffer, "Profile: {}\n", profile_ss.str());
     fmt::format_to(debug_string_buffer, "PipelineTask[id = {}, state = {}]\noperators: ", _index,
